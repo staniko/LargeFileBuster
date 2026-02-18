@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a7fd4"/>
+      <stop offset="100%" stop-color="#0d4f8a"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd966"/>
+      <stop offset="100%" stop-color="#e6ac00"/>
+    </linearGradient>
+    <linearGradient id="bar1" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="100%" stop-color="#ee4444"/>
+    </linearGradient>
+    <linearGradient id="bar2" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#ffa94d"/>
+      <stop offset="100%" stop-color="#ff8800"/>
+    </linearGradient>
+    <linearGradient id="bar3" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#51cf66"/>
+      <stop offset="100%" stop-color="#2b8a3e"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded background -->
+  <rect x="4" y="4" width="248" height="248" rx="44" ry="44" fill="url(#bg)"/>
+  <!-- Folder body -->
+  <path d="M 42 80 L 42 196 Q 42 206 52 206 L 204 206 Q 214 206 214 196 L 214 90 Q 214 80 204 80 L 130 80 L 118 64 Q 114 58 106 58 L 52 58 Q 42 58 42 68 Z" fill="url(#folder)" opacity="0.92"/>
+  <!-- Folder tab -->
+  <path d="M 42 68 Q 42 58 52 58 L 106 58 Q 114 58 118 64 L 130 80 L 42 80 Z" fill="#ffec99" opacity="0.95"/>
+  <!-- Bar chart inside folder -->
+  <rect x="72" y="120" width="24" height="70" rx="4" fill="url(#bar1)"/>
+  <rect x="108" y="100" width="24" height="90" rx="4" fill="url(#bar2)"/>
+  <rect x="144" y="140" width="24" height="50" rx="4" fill="url(#bar3)"/>
+  <!-- Magnifying glass -->
+  <circle cx="185" cy="68" r="28" fill="none" stroke="#fff" stroke-width="6" opacity="0.9"/>
+  <line x1="205" y1="88" x2="224" y2="107" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  <!-- Size indicator in magnifier -->
+  <text x="185" y="75" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="22" fill="#fff" opacity="0.95">GB</text>
+</svg>

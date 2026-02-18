@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+bin/
+data/
+**/*.sqlite
+**/test-results/
+**/tsconfig.tsbuildinfo
+*.tsbuildinfo
+.vscode/settings.json

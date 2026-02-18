@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "types": ["node", "react", "react-dom"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*", "electron-env.d.ts", "src/types.d.ts"],
+  "exclude": ["dist", "out"]
+}
