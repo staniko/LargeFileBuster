@@ -138,14 +138,14 @@ The test script (`scripts/test-native.js`) validates:
 
 3. **Test Environment**: Automated tests need environment fixes for headless Electron testing.
 
-4. **Platform Testing**: Currently validated on Linux. Needs testing on Windows and macOS.
+4. **Windows SQLite3 Setup**: On Windows, users must manually download SQLite3 amalgamation files or use the provided setup script. See `docs/WINDOWS_BUILD.md` for details.
 
 ## Security Considerations
 
 - No new vulnerabilities introduced
 - SQLite is a well-tested, secure database
 - All file operations have proper error handling
-- No external dependencies beyond system SQLite
+- No external dependencies beyond system SQLite (Linux/Mac) or bundled SQLite (Windows)
 - Prepared statements prevent SQL injection
 
 ## Future Enhancements
