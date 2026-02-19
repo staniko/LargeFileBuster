@@ -217,14 +217,13 @@ Value GetItemByPath(const CallbackInfo& info) {
     }
     
     std::string path = info[0].As<String>().Utf8Value();
-    lfb::ItemRecord* rec = globalDb->getItemByPath(path);
+    std::unique_ptr<lfb::ItemRecord> rec(globalDb->getItemByPath(path));
     
     if (!rec) {
         return env.Null();
     }
     
     Object result = itemRecordToJS(env, *rec);
-    delete rec;
     
     return result;
 }
