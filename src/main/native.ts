@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { ItemRecord } from './types'
+import { ItemRecord } from '../shared/types'
 
 // Load the native addon
 const nativeAddon = require(path.join(__dirname, '../../native/build/Release/lfb_native.node'))

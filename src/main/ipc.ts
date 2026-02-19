@@ -2,8 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ChildRequest, ScanRequest, TopRequest, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
-import { getChildren, getRoots, getTop, openDatabase, resetDatabase } from './db'
-import { runScan, runScanAsync, activeScans } from './scanner'
+import { getChildren, getRoots, getTop, openDatabase, resetDatabase, runScan, runScanAsync, activeScans } from './backend'
 
 let dbHandle: any
 let dbPath: string
@@ -11,7 +10,7 @@ let dbReady: Promise<void> | null = null
 
 function ensureDb() {
   if (!dbReady) {
-    dbReady = openDatabase().then((res) => {
+    dbReady = openDatabase().then((res: { db: any; dbPath: string }) => {
       dbHandle = res.db
       dbPath = res.dbPath
     })
@@ -148,7 +147,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
       dbPath,
       runId,
       skipScannedAfter: req.skipScannedAfter,
-      onProgress: (info) => {
+      onProgress: (info: { runId: string; state: string; message?: string; itemsScanned: number; currentPath: string }) => {
         mainWindow.webContents.send('scan-status', {
           runId: info.runId,
           state: info.state,

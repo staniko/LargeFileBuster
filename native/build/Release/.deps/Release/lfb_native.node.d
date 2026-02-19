@@ -1,1 +1,0 @@
-cmd_Release/lfb_native.node := ln -f "Release/obj.target/lfb_native.node" "Release/lfb_native.node" 2>/dev/null || (rm -rf "Release/lfb_native.node" && cp -af "Release/obj.target/lfb_native.node" "Release/lfb_native.node")

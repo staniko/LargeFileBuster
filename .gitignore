@@ -8,3 +8,4 @@ data/
 **/tsconfig.tsbuildinfo
 *.tsbuildinfo
 .vscode/settings.json
+native/build/
