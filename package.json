@@ -99,6 +99,14 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "license": "NOTICE"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "staniko",
+        "repo": "LargeFileBuster",
+        "releaseType": "release"
+      }
+    ]
   }
 }
