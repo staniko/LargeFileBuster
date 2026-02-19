@@ -2,8 +2,25 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ChildRequest, ScanRequest, TopRequest, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
-import { getChildren, getRoots, getTop, openDatabase, resetDatabase } from './db'
-import { runScan, runScanAsync, activeScans } from './scanner'
+
+// Select implementation based on environment variable
+const USE_NATIVE = process.env.USE_NATIVE === 'true'
+
+let dbModule: any
+let scannerModule: any
+
+if (USE_NATIVE) {
+  console.log('[LFB] Using NATIVE C++ implementation')
+  dbModule = require('./db-native')
+  scannerModule = require('./scanner-native')
+} else {
+  console.log('[LFB] Using JavaScript implementation')
+  dbModule = require('./db')
+  scannerModule = require('./scanner')
+}
+
+const { getChildren, getRoots, getTop, openDatabase, resetDatabase } = dbModule
+const { runScan, runScanAsync, activeScans } = scannerModule
 
 let dbHandle: any
 let dbPath: string
@@ -11,7 +28,7 @@ let dbReady: Promise<void> | null = null
 
 function ensureDb() {
   if (!dbReady) {
-    dbReady = openDatabase().then((res) => {
+    dbReady = openDatabase().then((res: { db: any; dbPath: string }) => {
       dbHandle = res.db
       dbPath = res.dbPath
     })
@@ -148,7 +165,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
       dbPath,
       runId,
       skipScannedAfter: req.skipScannedAfter,
-      onProgress: (info) => {
+      onProgress: (info: { runId: string; state: string; message?: string; itemsScanned: number; currentPath: string }) => {
         mainWindow.webContents.send('scan-status', {
           runId: info.runId,
           state: info.state,

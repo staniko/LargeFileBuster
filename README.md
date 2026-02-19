@@ -31,6 +31,8 @@ Hard drives fill up. The built-in file explorer doesn't help much — you end up
 - [Node.js](https://nodejs.org/) ≥ 18
 - npm ≥ 9
 
+**Note for Windows users**: The optional native C++ addon requires additional setup. See [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for details. The app works fine without it using the JavaScript implementation.
+
 ### Install & run
 
 ```bash
@@ -43,7 +45,7 @@ This builds the Electron main process, starts the Vite dev server on `http://loc
 ### Build for production
 
 ```bash
-npm run build          # compile main + renderer
+npm run build          # compile main + renderer (native addon optional)
 npm run dist:win       # package as Windows NSIS installer (bin/)
 ```
 
