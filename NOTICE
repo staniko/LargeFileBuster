@@ -4,9 +4,9 @@ Licensed under the European Union Public Licence (EUPL) v1.2.
 
 This software includes the following open-source components:
 
-  - Electron        — MIT License
-  - React           — MIT License
-  - sql.js / SQLite — MIT License (WebAssembly build)
-  - Vite            — MIT License
-  - Chromium        — BSD 3-Clause License
-  - Playwright      — Apache License 2.0 (testing only)
+  - Electron        - MIT License
+  - React           - MIT License
+  - sql.js / SQLite - MIT License (WebAssembly build)
+  - Vite            - MIT License
+  - Chromium        - BSD 3-Clause License
+  - Playwright      - Apache License 2.0 (testing only)
