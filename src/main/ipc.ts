@@ -2,7 +2,25 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ChildRequest, ScanRequest, TopRequest, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
-import { getChildren, getRoots, getTop, openDatabase, resetDatabase, runScan, runScanAsync, activeScans } from './backend'
+
+// Select implementation based on environment variable
+const USE_NATIVE = process.env.USE_NATIVE === 'true'
+
+let dbModule: any
+let scannerModule: any
+
+if (USE_NATIVE) {
+  console.log('[LFB] Using NATIVE C++ implementation')
+  dbModule = require('./db-native')
+  scannerModule = require('./scanner-native')
+} else {
+  console.log('[LFB] Using JavaScript implementation')
+  dbModule = require('./db')
+  scannerModule = require('./scanner')
+}
+
+const { getChildren, getRoots, getTop, openDatabase, resetDatabase } = dbModule
+const { runScan, runScanAsync, activeScans } = scannerModule
 
 let dbHandle: any
 let dbPath: string
