@@ -111,10 +111,15 @@ USE_NATIVE=true npm test
 ### For Native C++ Mode
 - Node.js ≥ 18
 - C++17 compiler (g++ ≥ 7, clang ≥ 5, MSVC ≥ 2017)
-- SQLite3 development headers
-  - Linux: `apt-get install libsqlite3-dev`
-  - macOS: `brew install sqlite3`
-  - Windows: Included in build
+- SQLite3 development headers/source
+  - **Linux**: `apt-get install libsqlite3-dev`
+  - **macOS**: `brew install sqlite3`
+  - **Windows**: Download SQLite amalgamation from https://www.sqlite.org/download.html
+    - Get `sqlite-amalgamation-XXXXXXX.zip`
+    - Extract `sqlite3.h` and `sqlite3.c` to `native/deps/` directory
+    - Or install via vcpkg: `vcpkg install sqlite3:x64-windows`
+
+**Note**: If the native build fails, the application will automatically fall back to the JavaScript implementation.
 
 ## Known Issues
 
