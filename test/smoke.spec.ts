@@ -2,6 +2,13 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import type { LfbApi } from '../src/preload/preload'
+
+declare global {
+  interface Window {
+    lfb: LfbApi
+  }
+}
 
 const projectRoot = path.resolve(__dirname, '..')
 

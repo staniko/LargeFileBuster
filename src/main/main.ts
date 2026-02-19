@@ -62,6 +62,7 @@ function createWindow() {
               title: 'About LargeFileBuster',
               message: 'LargeFileBuster',
               detail: [
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
                 `Version ${require('../../package.json').version}`,
                 '',
                 'By Stanislaw Koltschin <stan.the.maker@koltschin.net>',
