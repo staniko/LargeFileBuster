@@ -1,6 +1,6 @@
 {
   "name": "largefilebuster",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "private": true,
   "license": "EUPL-1.2",
   "author": {
@@ -112,10 +112,6 @@
   "overrides": {
     "minimatch": "^10.0.0",
     "glob": "^11.0.0",
-    "rimraf": "^6.0.0",
-    "ajv": "^8.17.0",
-    "eslint": {
-      "ajv": "^6.12.6"
-    }
+    "rimraf": "^6.0.0"
   }
 }
