@@ -1,4 +1,3 @@
-// Generate icon.png from icon.svg using @resvg/resvg-js (no sharp/to-ico needed)
 const { Resvg } = require('@resvg/resvg-js')
 const fs = require('fs')
 const path = require('path')

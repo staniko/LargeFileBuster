@@ -9,6 +9,8 @@ Hard drives fill up. The built-in file explorer doesn't help much — you end up
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
 ![License](https://img.shields.io/badge/License-EUPL--1.2-blue)
 
+![LargeFileBuster](docs/screenshot.png)
+
 ---
 
 ## Features
