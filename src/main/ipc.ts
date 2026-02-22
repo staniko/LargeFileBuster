@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ChildRequest, ScanRequest, TopRequest, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
 import { getChildren, getRoots, getTop, openDatabase, resetDatabase } from './db'
-import { runScan, runScanAsync, activeScans } from './scanner'
+import { runScan, runScanAsync, activeScans, ScanProgress } from './scanner'
 
 let dbHandle: any
 let dbPath: string
@@ -141,6 +141,24 @@ export function setupIpc(mainWindow: BrowserWindow) {
     const runId = randomUUID()
 
     // Start async scan without awaiting — progress comes via scan-status events
+    let lastProgressSent = 0
+    const PROGRESS_THROTTLE_MS = 200
+
+    const sendProgress = (info: ScanProgress) => {
+      if (info.state === 'running') {
+        const now = Date.now()
+        if (now - lastProgressSent < PROGRESS_THROTTLE_MS) return
+        lastProgressSent = now
+      }
+      mainWindow.webContents.send('scan-status', {
+        runId: info.runId,
+        state: info.state,
+        message: info.message,
+        itemsScanned: info.itemsScanned,
+        currentPath: info.currentPath
+      } as ScanStatus)
+    }
+
     runScanAsync({
       startPath: req.startPath,
       mode,
@@ -148,15 +166,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
       dbPath,
       runId,
       skipScannedAfter: req.skipScannedAfter,
-      onProgress: (info) => {
-        mainWindow.webContents.send('scan-status', {
-          runId: info.runId,
-          state: info.state,
-          message: info.message,
-          itemsScanned: info.itemsScanned,
-          currentPath: info.currentPath
-        } as ScanStatus)
-      }
+      onProgress: sendProgress
     }).catch(() => { /* errors handled via onProgress */ })
 
     return { runId }
