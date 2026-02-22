@@ -346,3 +346,130 @@ test.describe('async scanning', () => {
     await app.close()
   })
 })
+
+/* ================================================================
+   Level 4 — Performance tests for Temp folder navigation
+   ================================================================ */
+
+test.describe('Temp folder performance', () => {
+  const TEMP_DIR = path.join(os.tmpdir())
+
+  test.beforeAll(() => {
+    // Skip if Temp folder doesn't exist (should always exist on Windows)
+    if (!fs.existsSync(TEMP_DIR)) {
+      test.skip()
+    }
+  })
+
+  test('navigate to Temp folder with latency check', async () => {
+    test.setTimeout(60_000)
+    const { app, page } = await launch()
+    await resetAndWait(page)
+
+    // Navigate to C:\ drive
+    await page.locator('[data-item-name="C:\\\\"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to Users folder
+    await page.locator('[data-item-name="Users"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to current user folder
+    const username = os.userInfo().username
+    await page.locator(`[data-item-name="${username}"]`).dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to AppData
+    await page.locator('[data-item-name="AppData"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to Local
+    await page.locator('[data-item-name="Local"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Measure time to navigate to Temp folder
+    const startTime = Date.now()
+    await page.locator('[data-item-name="Temp"]').dblclick()
+    
+    // Wait for items to appear (or timeout if hanging)
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 30_000 })
+    const endTime = Date.now()
+    
+    const latency = endTime - startTime
+    console.log(`Navigation to Temp folder took ${latency}ms`)
+    
+    // Assert that navigation completes within reasonable time (10 seconds)
+    // If this fails, there's a performance issue
+    expect(latency).toBeLessThan(10_000)
+
+    // Verify we can interact with the UI (not frozen)
+    await expect(page.getByTestId('up-btn')).toBeEnabled()
+    await expect(page.getByTestId('breadcrumbs')).toContainText('Temp')
+
+    await app.close()
+  })
+
+  test('start scanning Temp folder then navigate into it', async () => {
+    test.setTimeout(120_000)
+    const { app, page } = await launch()
+    await resetAndWait(page)
+
+    // Navigate to C:\ drive
+    await page.locator('[data-item-name="C:\\\\"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to Users folder
+    await page.locator('[data-item-name="Users"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to current user folder
+    const username = os.userInfo().username
+    await page.locator(`[data-item-name="${username}"]`).dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to AppData
+    await page.locator('[data-item-name="AppData"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Navigate to Local
+    await page.locator('[data-item-name="Local"]').dblclick()
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 10_000 })
+
+    // Start a scan of Temp folder (right-click → Folder size check)
+    const tempRow = page.locator('[data-item-name="Temp"]')
+    await expect(tempRow).toBeVisible({ timeout: 10_000 })
+    await tempRow.click({ button: 'right' })
+    await page.getByTestId('ctx-folder-size-check').click()
+
+    // Wait a moment for scan to start
+    await page.waitForTimeout(1000)
+
+    // Now navigate into Temp while scan is running
+    const startTime = Date.now()
+    await tempRow.dblclick()
+    
+    // Wait for items to appear
+    await expect(page.getByTestId('item-row')).not.toHaveCount(0, { timeout: 30_000 })
+    const endTime = Date.now()
+    
+    const latency = endTime - startTime
+    console.log(`Navigation to Temp folder (while scanning) took ${latency}ms`)
+    
+    // Assert navigation completes within reasonable time even while scanning
+    expect(latency).toBeLessThan(10_000)
+
+    // Verify we're in the Temp folder
+    await expect(page.getByTestId('breadcrumbs')).toContainText('Temp')
+
+    // Verify UI is responsive (can navigate up)
+    await expect(page.getByTestId('up-btn')).toBeEnabled()
+
+    // Cancel any ongoing scan
+    const cancelBtn = page.getByTestId('cancel-scan-btn')
+    if (await cancelBtn.isVisible().catch(() => false)) {
+      await cancelBtn.click({ timeout: 2_000 }).catch(() => {})
+    }
+
+    await app.close()
+  })
+})
