@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window'
 import { ChildResponse, ItemRecord, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../../shared/types'
 
 /* ========== helpers ========== */
@@ -37,6 +38,12 @@ function buildBreadcrumbs(current: string | null): { label: string; path: string
   return crumbs
 }
 
+function parseIsoMs(iso?: string): number {
+  if (!iso) return 0
+  const ms = Date.parse(iso)
+  return Number.isNaN(ms) ? 0 : ms
+}
+
 /** Merge FS listing with DB data: FS entries give immediate visibility,
  *  DB entries provide scanned sizes. */
 interface DisplayItem {
@@ -48,6 +55,8 @@ interface DisplayItem {
   folderCount: number
   lastWriteUtc: string
   scannedUtc: string
+  lastWriteMs: number
+  scannedMs: number
   hasDbData: boolean
 }
 
@@ -78,6 +87,8 @@ function mergeItems(
         folderCount: db ? db.folderCount : 0,
         lastWriteUtc: db ? db.lastWriteUtc : e.lastWriteUtc,
         scannedUtc: db ? db.scannedUtc : '',
+        lastWriteMs: parseIsoMs(db ? db.lastWriteUtc : e.lastWriteUtc),
+        scannedMs: parseIsoMs(db ? db.scannedUtc : ''),
         hasDbData: !!db
       })
     }
@@ -94,6 +105,8 @@ function mergeItems(
         folderCount: r.folderCount,
         lastWriteUtc: r.lastWriteUtc,
         scannedUtc: r.scannedUtc,
+        lastWriteMs: parseIsoMs(r.lastWriteUtc),
+        scannedMs: parseIsoMs(r.scannedUtc),
         hasDbData: true
       })
     }
@@ -119,7 +132,7 @@ function sortItems(items: DisplayItem[], key: SortKey, dir: SortDir): DisplayIte
         v = a.sizeBytes - b.sizeBytes
         break
       case 'modified':
-        v = new Date(a.lastWriteUtc).getTime() - new Date(b.lastWriteUtc).getTime()
+        v = a.lastWriteMs - b.lastWriteMs
         break
       case 'files':
         v = a.fileCount - b.fileCount
@@ -128,7 +141,7 @@ function sortItems(items: DisplayItem[], key: SortKey, dir: SortDir): DisplayIte
         v = a.folderCount - b.folderCount
         break
       case 'lastDeepScan':
-        v = (a.scannedUtc || '').localeCompare(b.scannedUtc || '')
+        v = a.scannedMs - b.scannedMs
         break
     }
     return dir === 'desc' ? -v : v
@@ -147,8 +160,108 @@ const SELECTED_BG = '#cce5ff'
 const HOVER_BG = '#e9e9e9'
 const BORDER = '#e0e0e0'
 const FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+const GRID_TEMPLATE = 'minmax(0, 1fr) 90px 50px 60px 130px 130px'
+const PROGRESS_THROTTLE_MS = 150
 
 /* ========== App ========== */
+
+type RowEntry = { kind: 'up' } | { kind: 'item'; item: DisplayItem }
+
+interface RowData {
+  rows: RowEntry[]
+  selectedPath: string | null
+  currentPath: string | null
+  onNavigate: (path: string) => void
+  onSelect: (path: string) => void
+  onContextMenu: (e: React.MouseEvent, item: DisplayItem) => void
+  onGoUp: () => void
+  formatDate: (ms: number) => string
+}
+
+const ListRow = React.memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
+  const row = data.rows[index]
+
+  if (row.kind === 'up') {
+    return (
+      <div
+        data-testid="up-row"
+        onDoubleClick={data.onGoUp}
+        style={{
+          ...style,
+          display: 'grid',
+          gridTemplateColumns: GRID_TEMPLATE,
+          alignItems: 'center',
+          height: ROW_HEIGHT,
+          cursor: 'pointer',
+          borderBottom: `1px solid ${BORDER}`
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = HOVER_BG)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+      >
+        <div style={{ ...tdStyle, gridColumn: '1 / -1' }}>
+          <span style={{ marginRight: 6 }}>{'\uD83D\uDCC1'}</span>
+          <span style={{ fontWeight: 600 }}>..</span>
+        </div>
+      </div>
+    )
+  }
+
+  const item = row.item
+  const isSel = data.selectedPath === item.fullPath
+
+  return (
+    <div
+      key={item.fullPath}
+      data-testid="item-row"
+      data-item-type={item.isDirectory ? 'Folder' : 'File'}
+      data-item-name={item.name}
+      onClick={() => data.onSelect(item.fullPath)}
+      onDoubleClick={() => item.isDirectory && data.onNavigate(item.fullPath)}
+      onContextMenu={(e) => data.onContextMenu(e, item)}
+      style={{
+        ...style,
+        display: 'grid',
+        gridTemplateColumns: GRID_TEMPLATE,
+        alignItems: 'center',
+        height: ROW_HEIGHT,
+        cursor: item.isDirectory ? 'pointer' : 'default',
+        borderBottom: `1px solid ${BORDER}`,
+        background: isSel ? SELECTED_BG : undefined
+      }}
+      onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = HOVER_BG }}
+      onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = '' }}
+    >
+      <div style={tdStyle}>
+        <span style={{ marginRight: 6, fontSize: 14, verticalAlign: 'middle' }}>
+          {item.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}
+        </span>
+        <span data-testid="item-name" title={item.fullPath} style={{
+          fontWeight: item.isDirectory ? 600 : 400,
+          opacity: item.hasDbData ? 1 : 0.6
+        }}>
+          {data.currentPath === null ? item.fullPath : item.name}
+        </span>
+      </div>
+      <div style={{ ...tdStyle, textAlign: 'right' }} data-testid="item-size">
+        {item.sizeBytes > 0 || item.hasDbData ? formatSize(item.sizeBytes) : '\u2014'}
+      </div>
+      <div style={{ ...tdStyle, textAlign: 'right', color: '#888' }}>
+        {item.hasDbData ? item.fileCount : ''}
+      </div>
+      <div style={{ ...tdStyle, textAlign: 'right', color: '#888' }}>
+        {item.hasDbData ? item.folderCount : ''}
+      </div>
+      <div style={{ ...tdStyle, color: '#888', fontSize: 11 }}>
+        {data.formatDate(item.lastWriteMs)}
+      </div>
+      <div style={{ ...tdStyle, color: '#888', fontSize: 11 }}>
+        {data.formatDate(item.scannedMs)}
+      </div>
+    </div>
+  )
+})
+
+ListRow.displayName = 'ListRow'
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState<string | null>(null)
@@ -173,6 +286,10 @@ export default function App() {
   const sidebarDragRef = useRef<{ startX: number; startW: number } | null>(null)
 
   const navIdRef = useRef(0)
+  const listContainerRef = useRef<HTMLDivElement | null>(null)
+  const [listHeight, setListHeight] = useState(0)
+  const scanProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingProgressRef = useRef<ScanStatus | null>(null)
 
   /* ---- data fetching ---- */
 
@@ -208,6 +325,12 @@ export default function App() {
       setTopFiles(files)
     } catch { /* ignore */ }
   }, [])
+
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short', timeStyle: 'short'
+  }), [])
+
+  const formatDate = useCallback((ms: number) => (ms ? dateFormatter.format(ms) : ''), [dateFormatter])
 
   /* ---- navigation ---- */
 
@@ -332,28 +455,71 @@ export default function App() {
     navigateTo(currentPath, false)
   }, [currentPath, navigateTo])
 
+  /* ---- context menu ---- */
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, item: DisplayItem) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, item })
+  }, [])
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
   /* ---- scan status ---- */
 
   useEffect(() => {
+    const flushProgress = () => {
+      const pending = pendingProgressRef.current
+      if (!pending || pending.runId !== scanning) return
+      pendingProgressRef.current = null
+      setScanProgress({
+        itemsScanned: pending.itemsScanned ?? 0,
+        currentPath: pending.currentPath
+      })
+    }
+
+    const scheduleProgress = () => {
+      if (scanProgressTimerRef.current) return
+      scanProgressTimerRef.current = setTimeout(() => {
+        scanProgressTimerRef.current = null
+        flushProgress()
+      }, PROGRESS_THROTTLE_MS)
+    }
+
     const unsub = window.lfb.onScanStatus((status: ScanStatus) => {
       if (status.state === 'running') {
-        setScanProgress({
-          itemsScanned: status.itemsScanned ?? 0,
-          currentPath: status.currentPath
-        })
-      } else if (status.state === 'completed' || status.state === 'error' || status.state === 'cancelled') {
-        setScanning((prev) => (prev === status.runId ? null : prev))
-        setScanProgress(null)
-        if (status.state === 'error' && status.message) {
-          setError(status.message)
-        }
-        // Re-fetch DB items + top lists without full navigation (avoids root listing bug)
-        fetchDbItems(currentPath).then((fresh) => setDbItems(fresh))
-        fetchTop()
+        if (!scanning || status.runId !== scanning) return
+        pendingProgressRef.current = status
+        scheduleProgress()
+        return
       }
+
+      if (status.runId !== scanning) return
+
+      if (scanProgressTimerRef.current) {
+        clearTimeout(scanProgressTimerRef.current)
+        scanProgressTimerRef.current = null
+      }
+      pendingProgressRef.current = null
+      setScanning((prev) => (prev === status.runId ? null : prev))
+      setScanProgress(null)
+      if (status.state === 'error' && status.message) {
+        setError(status.message)
+      }
+      // Re-fetch DB items + top lists without full navigation (avoids root listing bug)
+      fetchDbItems(currentPath).then((fresh) => setDbItems(fresh))
+      fetchTop()
     })
-    return () => { unsub() }
-  }, [currentPath, fetchDbItems, fetchTop])
+
+    return () => {
+      unsub()
+      if (scanProgressTimerRef.current) {
+        clearTimeout(scanProgressTimerRef.current)
+        scanProgressTimerRef.current = null
+      }
+      pendingProgressRef.current = null
+    }
+  }, [currentPath, fetchDbItems, fetchTop, scanning])
 
   const cancelScan = useCallback(async () => {
     if (scanning) {
@@ -371,16 +537,6 @@ export default function App() {
     })
     return () => { unsub() }
   }, [resetDb])
-
-  /* ---- context menu ---- */
-
-  const handleContextMenu = useCallback((e: React.MouseEvent, item: DisplayItem) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY, item })
-  }, [])
-
-  const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
   /* ---- lifecycle ---- */
 
@@ -404,30 +560,72 @@ export default function App() {
 
   /* ---- derived ---- */
 
-  const merged = currentPath
-    ? mergeItems(fsEntries, dbItems, currentPath)
-    : (() => {
-        // At root: merge drives + DB roots
-        const dbRoots = dbItems.map<DisplayItem>((r) => ({
-          name: pathName(r.path), fullPath: r.path,
-          isDirectory: r.type === 'Folder', sizeBytes: r.sizeBytes,
-          fileCount: r.fileCount, folderCount: r.folderCount,
-          lastWriteUtc: r.lastWriteUtc, scannedUtc: r.scannedUtc, hasDbData: true
-        }))
-        const seenPaths = new Set(dbRoots.map((r) => r.fullPath.toUpperCase()))
-        const driveItems: DisplayItem[] = drives
-          .filter((d) => !seenPaths.has(d.path.toUpperCase()))
-          .map((d) => ({
-            name: d.label, fullPath: d.path,
-            isDirectory: true, sizeBytes: 0,
-            fileCount: 0, folderCount: 0,
-            lastWriteUtc: '', scannedUtc: '', hasDbData: false
-          }))
-        return [...driveItems, ...dbRoots]
-      })()
-  const sorted = sortItems(merged, sortKey, sortDir)
-  const breadcrumbs = buildBreadcrumbs(currentPath)
+  const merged = useMemo(() => {
+    if (currentPath) {
+      return mergeItems(fsEntries, dbItems, currentPath)
+    }
+    // At root: merge drives + DB roots
+    const dbRoots = dbItems.map<DisplayItem>((r) => ({
+      name: pathName(r.path), fullPath: r.path,
+      isDirectory: r.type === 'Folder', sizeBytes: r.sizeBytes,
+      fileCount: r.fileCount, folderCount: r.folderCount,
+      lastWriteUtc: r.lastWriteUtc, scannedUtc: r.scannedUtc,
+      lastWriteMs: parseIsoMs(r.lastWriteUtc),
+      scannedMs: parseIsoMs(r.scannedUtc),
+      hasDbData: true
+    }))
+    const seenPaths = new Set(dbRoots.map((r) => r.fullPath.toUpperCase()))
+    const driveItems: DisplayItem[] = drives
+      .filter((d) => !seenPaths.has(d.path.toUpperCase()))
+      .map((d) => ({
+        name: d.label, fullPath: d.path,
+        isDirectory: true, sizeBytes: 0,
+        fileCount: 0, folderCount: 0,
+        lastWriteUtc: '', scannedUtc: '',
+        lastWriteMs: 0, scannedMs: 0,
+        hasDbData: false
+      }))
+    return [...driveItems, ...dbRoots]
+  }, [currentPath, dbItems, drives, fsEntries])
+
+  const sorted = useMemo(() => sortItems(merged, sortKey, sortDir), [merged, sortDir, sortKey])
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(currentPath), [currentPath])
+  const listRows = useMemo<RowEntry[]>(() => {
+    const rows: RowEntry[] = []
+    if (currentPath) rows.push({ kind: 'up' })
+    for (const item of sorted) rows.push({ kind: 'item', item })
+    return rows
+  }, [currentPath, sorted])
+  const totalSize = useMemo(
+    () => sorted.reduce((s, i) => s + Math.max(0, i.sizeBytes), 0),
+    [sorted]
+  )
   const isScanning = scanning !== null
+
+  const rowData = useMemo<RowData>(() => ({
+    rows: listRows,
+    selectedPath,
+    currentPath,
+    onNavigate: navigateTo,
+    onSelect: setSelectedPath,
+    onContextMenu: handleContextMenu,
+    onGoUp: goUp,
+    formatDate
+  }), [currentPath, formatDate, goUp, handleContextMenu, listRows, navigateTo, selectedPath])
+
+  useLayoutEffect(() => {
+    const el = listContainerRef.current
+    if (!el) return
+    const update = () => setListHeight(el.clientHeight)
+    update()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [listRows.length])
 
   const sortArrow = (key: SortKey) => {
     if (sortKey !== key) return ''
@@ -547,102 +745,54 @@ export default function App() {
 
         {/* Items list */}
         {sorted.length > 0 && (
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            <table data-testid="item-table" style={{
-              width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed'
+          <div data-testid="item-table" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: GRID_TEMPLATE,
+              background: HEADER_BG,
+              borderBottom: `1px solid ${BORDER}`,
+              position: 'sticky',
+              top: 0,
+              zIndex: 1
             }}>
-              <thead>
-                <tr style={{
-                  background: HEADER_BG, borderBottom: `1px solid ${BORDER}`,
-                  position: 'sticky', top: 0, zIndex: 1
-                }}>
-                  <th style={{ ...thStyle, width: '45%', cursor: 'pointer' }} onClick={() => toggleSort('name')}>
-                    Name{sortArrow('name')}
-                  </th>
-                  <th style={{ ...thStyle, width: 90, cursor: 'pointer', textAlign: 'right' }} onClick={() => toggleSort('size')}>
-                    Size{sortArrow('size')}
-                  </th>
-                  <th style={{ ...thStyle, width: 50, textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('files')}>
-                    Files{sortArrow('files')}
-                  </th>
-                  <th style={{ ...thStyle, width: 60, textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('folders')}>
-                    Folders{sortArrow('folders')}
-                  </th>
-                  <th style={{ ...thStyle, width: 130, cursor: 'pointer' }} onClick={() => toggleSort('modified')}>
-                    Modified{sortArrow('modified')}
-                  </th>
-                  <th style={{ ...thStyle, width: 130, cursor: 'pointer' }} onClick={() => toggleSort('lastDeepScan')}>
-                    Last Size Check{sortArrow('lastDeepScan')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* ".." row */}
-                {currentPath && (
-                  <tr
-                    data-testid="up-row"
-                    onDoubleClick={goUp}
-                    style={{ height: ROW_HEIGHT, cursor: 'pointer', borderBottom: `1px solid ${BORDER}` }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = HOVER_BG)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                  >
-                    <td style={tdStyle} colSpan={6}>
-                      <span style={{ marginRight: 6 }}>{'\uD83D\uDCC1'}</span>
-                      <span style={{ fontWeight: 600 }}>..</span>
-                    </td>
-                  </tr>
-                )}
-                {sorted.map((item) => {
-                  const isSel = selectedPath === item.fullPath
-                  return (
-                    <tr
-                      key={item.fullPath}
-                      data-testid="item-row"
-                      data-item-type={item.isDirectory ? 'Folder' : 'File'}
-                      data-item-name={item.name}
-                      onClick={() => setSelectedPath(item.fullPath)}
-                      onDoubleClick={() => item.isDirectory && navigateTo(item.fullPath)}
-                      onContextMenu={(e) => handleContextMenu(e, item)}
-                      style={{
-                        height: ROW_HEIGHT,
-                        cursor: item.isDirectory ? 'pointer' : 'default',
-                        borderBottom: `1px solid ${BORDER}`,
-                        background: isSel ? SELECTED_BG : undefined
-                      }}
-                      onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = HOVER_BG }}
-                      onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = '' }}
-                    >
-                      <td style={tdStyle}>
-                        <span style={{ marginRight: 6, fontSize: 14, verticalAlign: 'middle' }}>
-                          {item.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}
-                        </span>
-                        <span data-testid="item-name" title={item.fullPath} style={{
-                          fontWeight: item.isDirectory ? 600 : 400,
-                          opacity: item.hasDbData ? 1 : 0.6
-                        }}>
-                          {currentPath === null ? item.fullPath : item.name}
-                        </span>
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="item-size">
-                        {item.sizeBytes > 0 || item.hasDbData ? formatSize(item.sizeBytes) : '\u2014'}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: '#888' }}>
-                        {item.hasDbData ? item.fileCount : ''}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: '#888' }}>
-                        {item.hasDbData ? item.folderCount : ''}
-                      </td>
-                      <td style={{ ...tdStyle, color: '#888', fontSize: 11 }}>
-                        {item.lastWriteUtc ? new Date(item.lastWriteUtc).toLocaleString() : ''}
-                      </td>
-                      <td style={{ ...tdStyle, color: '#888', fontSize: 11 }}>
-                        {item.scannedUtc ? new Date(item.scannedUtc).toLocaleString() : ''}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+              <div style={{ ...thStyle, cursor: 'pointer' }} onClick={() => toggleSort('name')}>
+                Name{sortArrow('name')}
+              </div>
+              <div style={{ ...thStyle, cursor: 'pointer', textAlign: 'right' }} onClick={() => toggleSort('size')}>
+                Size{sortArrow('size')}
+              </div>
+              <div style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('files')}>
+                Files{sortArrow('files')}
+              </div>
+              <div style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('folders')}>
+                Folders{sortArrow('folders')}
+              </div>
+              <div style={{ ...thStyle, cursor: 'pointer' }} onClick={() => toggleSort('modified')}>
+                Modified{sortArrow('modified')}
+              </div>
+              <div style={{ ...thStyle, cursor: 'pointer' }} onClick={() => toggleSort('lastDeepScan')}>
+                Last Size Check{sortArrow('lastDeepScan')}
+              </div>
+            </div>
+            <div ref={listContainerRef} style={{ flex: 1, minHeight: 0 }}>
+              {listHeight > 0 && (
+                <List
+                  height={listHeight}
+                  width="100%"
+                  itemCount={listRows.length}
+                  itemSize={ROW_HEIGHT}
+                  itemData={rowData}
+                  overscanCount={6}
+                  itemKey={(index, data) => {
+                    const row = data.rows[index]
+                    return row.kind === 'up' ? 'up' : row.item.fullPath
+                  }}
+                  style={{ overflowX: 'hidden' }}
+                >
+                  {ListRow}
+                </List>
+              )}
+            </div>
           </div>
         )}
 
@@ -652,7 +802,7 @@ export default function App() {
           borderTop: `1px solid ${BORDER}`, background: HEADER_BG, flexShrink: 0
         }}>
           {sorted.length} item{sorted.length !== 1 ? 's' : ''}
-          {sorted.length > 0 && ` \u2014 ${formatSize(sorted.reduce((s, i) => s + Math.max(0, i.sizeBytes), 0))} total`}
+          {sorted.length > 0 && ` \u2014 ${formatSize(totalSize)} total`}
         </div>
       </div>
 

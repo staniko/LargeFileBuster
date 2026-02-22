@@ -24,6 +24,7 @@
     "dist:win": "npm version patch --no-git-tag-version && npm run build && electron-builder --win --x64"
   },
   "dependencies": {
+    "react-window": "^1.8.11",
     "sql.js": "1.14"
   },
   "devDependencies": {
