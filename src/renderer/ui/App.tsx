@@ -690,7 +690,7 @@ export default function App() {
                 <a
                   href="#"
                   data-testid={`breadcrumb-${i}`}
-                  onClick={(e) => { e.preventDefault(); navigateTo(bc.path) }}
+                  onClick={(e) => { e.preventDefault(); navigateTo(bc.path, false) }}
                   style={{
                     fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
                     textDecoration: 'none', color: '#0078d4', fontSize: 12
