@@ -3,7 +3,8 @@ import path from 'node:path'
 import { setupIpc } from './ipc'
 
 // Raise V8 heap limit to 4 GB for large scans (e.g. full C:\)
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
+// Also enable manual GC to help with memory spikes during sql.js exports
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096 --expose-gc')
 
 const isDev = process.env.NODE_ENV === 'development'
 process.env.VITE_PORT = process.env.VITE_PORT || '5173'

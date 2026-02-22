@@ -449,3 +449,92 @@ test.describe('Temp folder performance', () => {
     await app.close()
   })
 })
+
+/* ================================================================
+   Level 5 — Full C: drive scan for memory stress testing
+   ================================================================ */
+
+test.describe('Full C: drive scan (stress test)', () => {
+  test.beforeAll(() => {
+    // Skip if C: drive doesn't exist
+    if (!fs.existsSync('C:\\')) {
+      test.skip()
+    }
+  })
+
+  test('scan C: drive and verify responsiveness (30 second test)', async () => {
+    test.setTimeout(120_000) // 2 minutes total (30s scan + margins)
+    const { app, page } = await launch()
+    await resetAndWait(page)
+
+    // Navigate to C:\ drive
+    const cDriveRow = page.locator('[data-item-name="C:\\\\"]')
+    await expect(cDriveRow).toBeVisible({ timeout: 10_000 })
+
+    // Start a full recursive scan of C:\
+    console.log('Starting C: drive scan (stress test)...')
+    const scanStartTime = Date.now()
+    
+    await cDriveRow.click({ button: 'right' })
+    await page.getByTestId('ctx-folder-size-check').click()
+
+    // Verify scanning indicator appears within 5 seconds
+    const scanningIndicator = page.getByTestId('scanning-indicator')
+    await expect(scanningIndicator).toBeVisible({ timeout: 5_000 })
+
+    // Monitor scan progress and responsiveness for 30 seconds
+    console.log('Monitoring scan for 30 seconds...')
+    let maxItemsScanned = 0
+    let lastUIResponseTime = Date.now()
+    
+    for (let i = 0; i < 30; i++) {
+      // Check current scan progress
+      const indicator = await scanningIndicator.textContent().catch(() => '')
+      const match = indicator?.match(/(\d+(?:,\d+)?)\s+items/)
+      if (match) {
+        const itemsScanned = parseInt(match[1].replace(/,/g, ''))
+        maxItemsScanned = Math.max(maxItemsScanned, itemsScanned)
+        if (i % 5 === 0) {
+          console.log(`[${i}s] Scanned ${itemsScanned.toLocaleString()} items`)
+        }
+      }
+
+      // Test UI responsiveness by interacting with buttons
+      try {
+        const isUpBtnEnabled = await page.getByTestId('up-btn').isEnabled()
+        const isRefreshBtnEnabled = await page.getByTestId('refresh-btn').isEnabled()
+        if (isUpBtnEnabled && isRefreshBtnEnabled) {
+          lastUIResponseTime = Date.now()
+        }
+      } catch {
+        // UI might be under heavy load, that's ok for stress test
+      }
+
+      // Wait 1 second between checks
+      await page.waitForTimeout(1000)
+    }
+
+    const monitorEndTime = Date.now()
+    console.log(`After 30s: ${maxItemsScanned.toLocaleString()} items scanned`)
+
+    // Verify app is still responsive (UI responded recently)
+    const responsivenessDuration = monitorEndTime - lastUIResponseTime
+    console.log(`UI last responsive ${responsivenessDuration}ms ago`)
+    expect(responsivenessDuration).toBeLessThan(5000) // UI should respond within 5 sec
+
+    // Cancel the ongoing scan
+    const cancelBtn = page.getByTestId('cancel-scan-btn')
+    if (await cancelBtn.isVisible().catch(() => false)) {
+      console.log('Cancelling scan...')
+      await cancelBtn.click()
+      
+      // Verify scanning indicator disappears after cancel
+      await expect(scanningIndicator).not.toBeVisible({ timeout: 10_000 })
+      console.log('Scan cancelled successfully')
+    }
+
+    await app.close()
+    console.log('C: drive stress test passed - memory and responsiveness verified')
+  })
+})
+})

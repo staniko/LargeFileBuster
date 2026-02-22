@@ -181,8 +181,9 @@ interface AggResult {
 /** How often (in items) to yield to the event loop & send progress. */
 const YIELD_INTERVAL = 200
 
-/** How often (in items) to persist the DB to disk (frees sql.js write buffers). */
-const PERSIST_INTERVAL = 5_000
+/** How often (in items) to persist the DB to disk (frees sql.js write buffers).
+ * Reduced from 5_000 to 50_000 to prevent memory spikes from Uint8Array allocations. */
+const PERSIST_INTERVAL = 50_000
 
 /**
  * Minimum file size (bytes) to store as an individual DB record.
@@ -316,8 +317,11 @@ async function scanFullAsync(
         state: 'running'
       })
       // Periodically persist DB to disk to free sql.js internal write buffers
+      // Less frequent persistence (50k items) reduces memory spikes from Uint8Array allocations
       if (counter.count % PERSIST_INTERVAL < YIELD_INTERVAL) {
         persistDatabase(db, dbPath)
+        // Force garbage collection of large buffers if available
+        if (global.gc) global.gc(false)
       }
       await yieldToEventLoop()
     }
