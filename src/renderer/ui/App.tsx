@@ -783,7 +783,7 @@ export default function App() {
                   itemSize={ROW_HEIGHT}
                   itemData={rowData}
                   overscanCount={6}
-                  itemKey={(index, data) => {
+                  itemKey={(index: number, data: RowData) => {
                     const row = data.rows[index]
                     return row.kind === 'up' ? 'up' : row.item.fullPath
                   }}
@@ -867,7 +867,8 @@ export default function App() {
                           setContextMenu({ x: e.clientX, y: e.clientY, item: {
                             name: pathName(f.path), fullPath: f.path, isDirectory: sidebarTab === 'folders',
                             sizeBytes: f.sizeBytes, fileCount: f.fileCount, folderCount: f.folderCount,
-                            lastWriteUtc: f.lastWriteUtc, scannedUtc: f.scannedUtc, hasDbData: true
+                            lastWriteUtc: f.lastWriteUtc, scannedUtc: f.scannedUtc, hasDbData: true,
+                            lastWriteMs: parseIsoMs(f.lastWriteUtc), scannedMs: parseIsoMs(f.scannedUtc)
                           }})
                         }}
                       >
