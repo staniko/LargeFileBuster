@@ -184,6 +184,7 @@ const ListRow = React.memo(({ index, style, data }: ListChildComponentProps<RowD
   if (row.kind === 'up') {
     return (
       <div
+        className="list-row"
         data-testid="up-row"
         onDoubleClick={data.onGoUp}
         style={{
@@ -195,8 +196,6 @@ const ListRow = React.memo(({ index, style, data }: ListChildComponentProps<RowD
           cursor: 'pointer',
           borderBottom: `1px solid ${BORDER}`
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = HOVER_BG)}
-        onMouseLeave={(e) => (e.currentTarget.style.background = '')}
       >
         <div style={{ ...tdStyle, gridColumn: '1 / -1' }}>
           <span style={{ marginRight: 6 }}>{'\uD83D\uDCC1'}</span>
@@ -211,6 +210,7 @@ const ListRow = React.memo(({ index, style, data }: ListChildComponentProps<RowD
 
   return (
     <div
+      className={isSel ? 'list-row selected' : 'list-row'}
       key={item.fullPath}
       data-testid="item-row"
       data-item-type={item.isDirectory ? 'Folder' : 'File'}
@@ -228,8 +228,6 @@ const ListRow = React.memo(({ index, style, data }: ListChildComponentProps<RowD
         borderBottom: `1px solid ${BORDER}`,
         background: isSel ? SELECTED_BG : undefined
       }}
-      onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = HOVER_BG }}
-      onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = '' }}
     >
       <div style={tdStyle}>
         <span style={{ marginRight: 6, fontSize: 14, verticalAlign: 'middle' }}>
@@ -663,6 +661,12 @@ export default function App() {
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Backspace') { e.preventDefault(); goBack() } }}
     >
+      <style>{`
+        .list-row:not(.selected):hover {
+          background: ${HOVER_BG} !important;
+        }
+      `}</style>
+      
       {/* Main Panel */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
