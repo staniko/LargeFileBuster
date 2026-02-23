@@ -8,3 +8,5 @@ data/
 **/tsconfig.tsbuildinfo
 *.tsbuildinfo
 .vscode/settings.json
+test-results.txt
+playwright-report/

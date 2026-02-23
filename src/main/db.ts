@@ -120,6 +120,7 @@ export async function resetDatabase(dbPath = defaultDbPath) {
 export function persistDatabase(db: any, dbPath: string) {
   const data: Uint8Array = db.export()
   fs.writeFileSync(dbPath, data)
+  // Buffer will be GC'd when function returns and reference goes out of scope
 }
 
 export function upsertItems(db: any, dbPath: string, items: ItemRecord[], persist = true) {
