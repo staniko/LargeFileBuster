@@ -129,7 +129,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
 
     // For shallow scans (fast), run synchronously and return immediately
     if (mode === 'shallow') {
-      const runId = runScan({ startPath: req.startPath, mode, db: dbHandle, dbPath })
+      const runId = runScan({ startPath: req.startPath, db: dbHandle, dbPath })
       mainWindow.webContents.send('scan-status', {
         runId, state: 'completed', itemsScanned: 0
       } as ScanStatus)

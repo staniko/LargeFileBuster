@@ -360,7 +360,7 @@ async function scanFullAsync(
    ============================================================ */
 
 /** Synchronous scan (shallow only). Returns runId. */
-export function runScan({ startPath, mode: _mode, db, dbPath }: ScanOptions): string {
+export function runScan({ startPath, db, dbPath }: Omit<ScanOptions, 'mode'>): string {
   const runId = randomUUID()
   const items = scanShallow(startPath, runId)
   if (items.length > 0) {

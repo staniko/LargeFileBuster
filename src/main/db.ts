@@ -119,13 +119,8 @@ export async function resetDatabase(dbPath = defaultDbPath) {
 
 export function persistDatabase(db: any, dbPath: string) {
   const data: Uint8Array = db.export()
-  try {
-    fs.writeFileSync(dbPath, data)
-  } finally {
-    // Clear the buffer from memory - sql.js can create large allocations
-    // that prevent GC even after writing. This is crucial for large scans.
-    data.fill(0)
-  }
+  fs.writeFileSync(dbPath, data)
+  // Buffer will be GC'd when function returns and reference goes out of scope
 }
 
 export function upsertItems(db: any, dbPath: string, items: ItemRecord[], persist = true) {
