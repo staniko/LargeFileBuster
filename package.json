@@ -21,6 +21,7 @@
     "build:main": "tsc -p tsconfig.main.json",
     "play": "concurrently -k \"npm:dev:renderer\" \"npm:start:electron\"",
     "test": "npm run build && npx playwright test",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
     "dist:win": "npm version patch --no-git-tag-version && npm run build && electron-builder --win --x64"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "sql.js": "~1.15.2"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.64.1",
     "@types/node": "^20.19.33",
