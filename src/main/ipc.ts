@@ -1,9 +1,13 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ChildRequest, ScanRequest, TopRequest, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
+import { randomUUID } from 'node:crypto'
+import { ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../shared/types'
 import { getChildren, getRoots, getTop, openDatabase, resetDatabase } from './db'
 import { runScan, runScanAsync, activeScans, ScanProgress } from './scanner'
+import { isTrustedSender } from './security'
+import { parseChildRequest, parseScanRequest, parseTopRequest, requireAbsolutePath, requireRunId } from './validate'
 
 let dbHandle: any
 let dbPath: string
@@ -19,19 +23,36 @@ function ensureDb() {
   return dbReady
 }
 
-export function setupIpc(mainWindow: BrowserWindow) {
+/**
+ * Registers an IPC handler that only answers the app's own UI.
+ * Arguments arrive as `unknown` so every handler has to validate them.
+ */
+function handle<T>(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => T | Promise<T>) {
+  ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    if (!isTrustedSender(event)) {
+      throw new Error(`Blocked "${channel}" request from an untrusted sender`)
+    }
+    return listener(event, ...args)
+  })
+}
+
+let registered = false
+
+export function setupIpc() {
+  if (registered) return
+  registered = true
   ensureDb()
 
   /* ---- DB queries ---- */
 
-  ipcMain.handle('children', async (_event, req: ChildRequest) => {
+  handle('children', async (_event, rawReq) => {
+    const req = parseChildRequest(rawReq)
     await ensureDb()
-    const parent = req.parent ?? null
     const doQuery = () => {
-      if (parent === null) {
-        return getRoots(dbHandle, req.limit ?? 200, req.sort ?? 'size_desc')
+      if (req.parent === null) {
+        return getRoots(dbHandle, req.limit, req.sort)
       }
-      return getChildren(dbHandle, parent, req.limit ?? 200, req.offset ?? 0, req.sort ?? 'size_desc', req.includeFiles ?? true)
+      return getChildren(dbHandle, req.parent, req.limit, req.offset, req.sort, req.includeFiles)
     }
     try {
       return doQuery()
@@ -46,16 +67,17 @@ export function setupIpc(mainWindow: BrowserWindow) {
     }
   })
 
-  ipcMain.handle('top', async (_event, req: TopRequest) => {
+  handle('top', async (_event, rawReq) => {
+    const req = parseTopRequest(rawReq)
     await ensureDb()
     try {
-      return getTop(dbHandle, req.type, req.limit ?? 100)
+      return getTop(dbHandle, req.type, req.limit)
     } catch (err: any) {
       if (String(err?.message ?? err).includes('datatype mismatch')) {
         const res = await resetDatabase(dbPath)
         dbHandle = res.db
         dbPath = res.dbPath
-        return getTop(dbHandle, req.type, req.limit ?? 100)
+        return getTop(dbHandle, req.type, req.limit)
       }
       throw err
     }
@@ -63,7 +85,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
 
   /* ---- Drive enumeration ---- */
 
-  ipcMain.handle('list-drives', async (): Promise<DriveInfo[]> => {
+  handle('list-drives', async (): Promise<DriveInfo[]> => {
     const drives: DriveInfo[] = []
     // Check A-Z drive letters
     for (let code = 65; code <= 90; code++) {
@@ -90,8 +112,8 @@ export function setupIpc(mainWindow: BrowserWindow) {
 
   /* ---- FS listing (immediate, no DB) ---- */
 
-  ipcMain.handle('list-dir', async (_event, dirPath: string): Promise<ListDirResponse> => {
-    const resolved = path.resolve(dirPath)
+  handle('list-dir', async (_event, rawPath): Promise<ListDirResponse> => {
+    const resolved = requireAbsolutePath(rawPath, 'dirPath')
     const parentPath = path.dirname(resolved)
     const entries: ListDirEntry[] = []
     try {
@@ -99,7 +121,10 @@ export function setupIpc(mainWindow: BrowserWindow) {
       for (const d of dirents) {
         const fullPath = path.join(resolved, d.name)
         try {
-          const s = fs.statSync(fullPath)
+          // lstat: describe the entry itself. Following a link here would let a
+          // planted symlink make the app touch whatever it points to (for
+          // example a remote share) just because its folder was opened.
+          const s = fs.lstatSync(fullPath)
           entries.push({
             name: d.name,
             isDirectory: d.isDirectory(),
@@ -123,21 +148,23 @@ export function setupIpc(mainWindow: BrowserWindow) {
 
   /* ---- Scanning (non-blocking) ---- */
 
-  ipcMain.handle('scan', async (_event, req: ScanRequest) => {
+  handle('scan', async (event, rawReq) => {
+    const req = parseScanRequest(rawReq)
     await ensureDb()
-    const mode = req.mode ?? 'shallow'
+
+    const sender = event.sender
+    const sendStatus = (status: ScanStatus) => {
+      if (!sender.isDestroyed()) sender.send('scan-status', status)
+    }
 
     // For shallow scans (fast), run synchronously and return immediately
-    if (mode === 'shallow') {
+    if (req.mode === 'shallow') {
       const runId = runScan({ startPath: req.startPath, db: dbHandle, dbPath })
-      mainWindow.webContents.send('scan-status', {
-        runId, state: 'completed', itemsScanned: 0
-      } as ScanStatus)
+      sendStatus({ runId, state: 'completed', itemsScanned: 0 })
       return { runId }
     }
 
     // For full (recursive) scans, fire-and-forget — return runId immediately
-    const { randomUUID } = await import('node:crypto')
     const runId = randomUUID()
 
     // Start async scan without awaiting — progress comes via scan-status events
@@ -150,18 +177,18 @@ export function setupIpc(mainWindow: BrowserWindow) {
         if (now - lastProgressSent < PROGRESS_THROTTLE_MS) return
         lastProgressSent = now
       }
-      mainWindow.webContents.send('scan-status', {
+      sendStatus({
         runId: info.runId,
         state: info.state,
         message: info.message,
         itemsScanned: info.itemsScanned,
         currentPath: info.currentPath
-      } as ScanStatus)
+      })
     }
 
     runScanAsync({
       startPath: req.startPath,
-      mode,
+      mode: req.mode,
       db: dbHandle,
       dbPath,
       runId,
@@ -172,8 +199,8 @@ export function setupIpc(mainWindow: BrowserWindow) {
     return { runId }
   })
 
-  ipcMain.handle('cancel-scan', async (_event, runId: string) => {
-    const scan = activeScans.get(runId)
+  handle('cancel-scan', async (_event, rawRunId) => {
+    const scan = activeScans.get(requireRunId(rawRunId))
     if (scan) {
       scan.cancel()
       return { ok: true }
@@ -183,7 +210,7 @@ export function setupIpc(mainWindow: BrowserWindow) {
 
   /* ---- Utility ---- */
 
-  ipcMain.handle('reset-db', async () => {
+  handle('reset-db', async () => {
     await ensureDb()
     const res = await resetDatabase(dbPath)
     dbHandle = res.db
@@ -191,14 +218,18 @@ export function setupIpc(mainWindow: BrowserWindow) {
     return { ok: true }
   })
 
-  ipcMain.handle('pick-folder', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+  handle('pick-folder', async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = { properties: ['openDirectory'] }
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return { canceled: true }
     return { canceled: false, path: result.filePaths[0] }
   })
 
-  ipcMain.handle('show-in-explorer', async (_event, fullPath: string) => {
-    shell.showItemInFolder(path.resolve(fullPath))
+  handle('show-in-explorer', async (_event, rawPath) => {
+    shell.showItemInFolder(requireAbsolutePath(rawPath, 'fullPath'))
     return { ok: true }
   })
 }

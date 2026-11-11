@@ -4,9 +4,6 @@ import fs from 'node:fs'
 import { app } from 'electron'
 import { ItemRecord, ItemType } from '../shared/types'
 
-const isDev = process.env.NODE_ENV === 'development'
-  || !app.isPackaged
-
 /** Prefix object keys with `:` for sql.js named-parameter binding. */
 function sqlBind(obj: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {}
@@ -16,24 +13,29 @@ function sqlBind(obj: Record<string, any>): Record<string, any> {
   return out
 }
 
-// In dev, store DB alongside project; in production, use appData
-const defaultDbPath = isDev
-  ? path.resolve(process.cwd(), 'data', 'lfb.sqlite')
-  : path.join(app.getPath('userData'), 'data', 'lfb.sqlite')
+// A packaged build always keeps its database in the per-user data directory.
+// Only an unpackaged checkout stores it next to the project. Neither location
+// depends on environment variables or on the directory the app was started from.
+const defaultDbPath = app.isPackaged
+  ? path.join(app.getPath('userData'), 'data', 'lfb.sqlite')
+  : path.join(app.getAppPath(), 'data', 'lfb.sqlite')
 let SQL: any
 
+const WASM_FILE = 'sql-wasm.wasm'
+
+/**
+ * The SQLite WebAssembly binary is code. It is loaded from exactly one place
+ * that ships with the app: the resources directory of a packaged build, or the
+ * project's own node_modules in an unpackaged checkout. It is never looked up
+ * relative to the current working directory, where anyone could plant a file.
+ */
 function locateWasmFile(file: string): string {
-  // Probe several potential locations for the WASM file
-  const candidates = [
-    path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', file),
-    path.resolve(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
-    path.resolve(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
-    path.join(process.resourcesPath, file)
-  ]
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p
+  if (file !== WASM_FILE) {
+    throw new Error(`Unexpected WebAssembly file requested: ${file}`)
   }
-  return candidates[candidates.length - 1] // fallback (will error)
+  return app.isPackaged
+    ? path.join(process.resourcesPath, WASM_FILE)
+    : path.join(path.dirname(require.resolve('sql.js')), WASM_FILE)
 }
 
 async function loadSql() {

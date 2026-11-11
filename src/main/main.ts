@@ -1,17 +1,32 @@
-import { app, BrowserWindow, dialog, Menu } from 'electron'
+import { app, BrowserWindow, dialog, Menu, session } from 'electron'
 import path from 'node:path'
 import { setupIpc } from './ipc'
+import {
+  APP_ENTRY_URL,
+  hardenSession,
+  hardenWebContents,
+  isDev,
+  registerAppProtocol,
+  registerAppScheme
+} from './security'
 
-// Raise V8 heap limit to 4 GB for large scans (e.g. full C:\)
-// Also enable manual GC to help with memory spikes during sql.js exports
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096 --expose-gc')
+// Raise the V8 heap limit for renderer processes. Switches appended here only
+// reach child processes, so nothing that weakens the renderer (such as
+// --expose-gc) belongs in this list.
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
 
-const isDev = process.env.NODE_ENV === 'development'
-process.env.VITE_PORT = process.env.VITE_PORT || '5173'
+// Every renderer runs in the Chromium sandbox, whatever a window asks for.
+app.enableSandbox()
 
-const iconPath = isDev
-  ? path.join(process.cwd(), 'assets', 'icon.png')
-  : path.join(process.resourcesPath, 'icon.png')
+// The UI is served from app://lfb/ instead of file://.
+registerAppScheme()
+
+// Applies to every window this app will ever create.
+app.on('web-contents-created', (_event, contents) => hardenWebContents(contents))
+
+const iconPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'icon.png')
+  : path.join(app.getAppPath(), 'assets', 'icon.png')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -21,7 +36,15 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       nodeIntegration: false,
-      contextIsolation: true
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      spellcheck: false
     }
   })
 
@@ -63,8 +86,7 @@ function createWindow() {
               title: 'About LargeFileBuster',
               message: 'LargeFileBuster',
               detail: [
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
-                `Version ${require('../../package.json').version}`,
+                `Version ${app.getVersion()}`,
                 '',
                 'By Stanislaw Koltschin <stan.the.maker@koltschin.net>',
                 '',
@@ -73,12 +95,12 @@ function createWindow() {
                 'Licensed under the European Union Public Licence (EUPL) v1.2.',
                 '',
                 'Open-source components:',
-                '  • Electron 35 — MIT License',
-                '  • React 18 — MIT License',
-                '  • sql.js 1.9 (SQLite via WebAssembly) — MIT License',
-                '  • Vite 5 — MIT License',
-                '  • Playwright (testing) — Apache 2.0',
-                '  • Chromium — BSD 3-Clause License',
+                `  • Electron ${process.versions.electron} — MIT License`,
+                `  • Chromium ${process.versions.chrome} — BSD 3-Clause License`,
+                '  • React — MIT License',
+                '  • sql.js (SQLite via WebAssembly) — MIT License',
+                '  • Vite — MIT License',
+                '  • Playwright (testing) — Apache 2.0'
               ].join('\n'),
               buttons: ['OK']
             })
@@ -89,17 +111,19 @@ function createWindow() {
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 
+  win.loadURL(APP_ENTRY_URL)
   if (isDev) {
-    win.loadURL(`http://localhost:${process.env.VITE_PORT}`)
     win.webContents.openDevTools({ mode: 'bottom' })
-  } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
-
-  setupIpc(win)
 }
 
 app.whenReady().then(() => {
+  hardenSession(session.defaultSession)
+  if (!isDev) {
+    registerAppProtocol(path.join(__dirname, '../renderer'))
+  }
+  setupIpc()
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

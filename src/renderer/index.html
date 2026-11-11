@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+    <!-- Baseline policy, also in effect under the Vite dev server (which needs inline styles).
+         The packaged app additionally sends a stricter policy as a response header, see src/main/security.ts. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none';" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LargeFileBuster</title>
   </head>
