@@ -1,0 +1,27 @@
+# Keeps dependencies and the pinned GitHub Actions current, with little noise:
+# one grouped pull request per ecosystem and month. Security fixes are not
+# held back by this schedule, Dependabot opens those as soon as they exist.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    # Skip releases that are only a few days old, most malicious package
+    # versions are found and removed within that time.
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
