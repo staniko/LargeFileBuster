@@ -4,9 +4,9 @@
 
 Hard drives fill up. The built-in file explorer doesn't help much — you end up clicking through folder after folder, checking sizes one by one, and nothing is remembered for next time. LargeFileBuster fixes that: it scans your drives, ranks every folder and file by size, persists the results in a local database, and lets you navigate straight to the biggest space hogs and bust them right away. Not less, not more.
 
-![Electron](https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
 ![License](https://img.shields.io/badge/License-EUPL--1.2-blue)
 
 ![LargeFileBuster](docs/screenshot.png)
@@ -51,8 +51,12 @@ npm run dist:win       # package as Windows NSIS installer (bin/)
 
 ```bash
 npx playwright install --with-deps   # first time only
-npm test                             # builds, then runs Playwright smoke tests
+npm test                             # builds, then runs the Playwright tests
 ```
+
+The suite has two parts: `test/smoke.spec.ts` drives the UI, `test/security.spec.ts` checks that the protections described under [Security](#security) are in place.
+
+After packaging, `npm run smoke:packaged` starts the packaged app from `bin/` and checks it the same way (fuses, origin, database location, renderer lockdown).
 
 ## Project structure
 
@@ -60,7 +64,9 @@ npm test                             # builds, then runs Playwright smoke tests
 src/
 ├── main/            # Electron main process
 │   ├── main.ts      # app entry, window & menu creation
+│   ├── security.ts  # app:// protocol, CSP, navigation/permission lock-down, IPC sender check
 │   ├── ipc.ts       # IPC handlers (children, top, scan, list-dir, …)
+│   ├── validate.ts  # validation of everything that arrives over IPC
 │   ├── db.ts        # sql.js database layer (open, query, upsert, reset)
 │   └── scanner.ts   # filesystem scanner (shallow & async full)
 ├── preload/
@@ -72,7 +78,10 @@ src/
 └── shared/
     └── types.ts     # shared TypeScript interfaces (ItemRecord, requests, …)
 test/
-└── smoke.spec.ts    # Playwright end-to-end tests (12 tests)
+├── smoke.spec.ts    # Playwright end-to-end tests of the UI
+└── security.spec.ts # Playwright security regression tests
+scripts/
+└── smoke-packaged.mjs  # checks the packaged app in bin/
 ```
 
 ## Scripts
@@ -85,20 +94,32 @@ test/
 | `npm run build:renderer` | Bundle renderer only |
 | `npm run lint` | ESLint check on `src/` |
 | `npm run typecheck` | TypeScript type checking (no emit) |
-| `npm test` | Build + Playwright smoke tests |
+| `npm test` | Build + Playwright tests (UI and security) |
+| `npm run smoke:packaged` | Check the packaged app in `bin/` (run after packaging) |
 | `npm run dist:win` | Package Windows installer |
 
 ## Tech stack
 
 | Component | Technology |
 |-----------|-----------|
-| Desktop framework | [Electron 35](https://www.electronjs.org/) |
+| Desktop framework | [Electron 45](https://www.electronjs.org/) |
 | UI | [React 18](https://react.dev/) |
-| Build (renderer) | [Vite 5](https://vitejs.dev/) |
+| Build (renderer) | [Vite 6](https://vitejs.dev/) |
 | Build (main) | TypeScript compiler |
-| Database | [sql.js 1.9](https://github.com/sql-js/sql.js) (SQLite via WebAssembly) |
+| Database | [sql.js 1.15](https://github.com/sql-js/sql.js) (SQLite via WebAssembly) |
 | Testing | [Playwright](https://playwright.dev/) (Electron integration) |
 | Packaging | [electron-builder](https://www.electron.build/) |
+
+## Security
+
+LargeFileBuster reads your whole file system, so the app is locked down to its own code:
+
+- The UI runs in a sandboxed renderer with context isolation and no Node.js access. It is served from a private `app://` origin with a strict Content-Security-Policy.
+- The window cannot navigate anywhere else or open other windows, all permission requests are denied, and network requests are blocked. The app works offline.
+- The main process only answers IPC calls from its own UI and validates every argument.
+- Release builds have the Electron fuses set: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect`, and the app code is only loaded from the integrity-checked `app.asar`.
+
+Details, known limitations and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 
 ## License
 

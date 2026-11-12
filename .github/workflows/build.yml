@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, ci/**]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       release:
@@ -15,23 +17,36 @@ on:
         type: boolean
         default: false
 
+# Read-only by default. Only the release job below asks for more.
 permissions:
-  contents: write
+  contents: read
+
+# A newer push to a pull request replaces the run of the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
+  # Runs everything that executes third-party code (npm packages, build tools,
+  # the app itself). It has a read-only token and keeps no git credentials on
+  # disk, so nothing in here can change the repository or publish anything.
   build:
+    name: Build and test
     if: ${{ !inputs.update_notes }}
     runs-on: windows-latest
+    timeout-minutes: 30
     outputs:
       is_release: ${{ steps.version.outputs.is_release }}
     env:
       IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -39,19 +54,32 @@ jobs:
       - name: Determine version
         id: version
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::package.json version '$VERSION' is not a valid release version"
+            exit 1
+          fi
           TAG="v$VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "is_release=$IS_RELEASE" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "$TAG" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $VERSION"
             exit 1
           fi
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$IS_RELEASE" == "true" ]]; then
-            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+              echo "::error::Releases are published from $DEFAULT_BRANCH only (this run is on $GITHUB_REF_NAME)."
+              exit 1
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --silent 2> tag-check.log; then
               echo "::error::Tag $TAG already exists. Bump the version in package.json first."
+              exit 1
+            elif ! grep -q "HTTP 404" tag-check.log; then
+              cat tag-check.log
+              echo "::error::Could not check whether tag $TAG already exists."
               exit 1
             fi
           fi
@@ -71,56 +99,50 @@ jobs:
       - name: Test
         run: npx playwright test
 
-      - name: Create release tag (manual release)
-        if: github.event_name == 'workflow_dispatch' && env.IS_RELEASE == 'true'
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
-
-      - name: Package Windows installer and publish release
-        if: env.IS_RELEASE == 'true'
-        run: npx electron-builder --win --x64 --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Package Windows installer
-        if: env.IS_RELEASE != 'true'
         run: npx electron-builder --win --x64 --publish never
 
-      - name: Upload installer artifacts
-        if: env.IS_RELEASE != 'true'
-        uses: actions/upload-artifact@v4
+      - name: Check the packaged app
+        run: npm run smoke:packaged
+
+      - name: Upload installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: LargeFileBuster-win-x64
           path: |
-            bin/*.exe
-            bin/*.blockmap
+            bin/LargeFileBuster-Setup-*.exe
+            bin/LargeFileBuster-Setup-*.exe.blockmap
             bin/latest.yml
           if-no-files-found: error
           retention-days: 30
 
-  release-notes:
+  # The only job with write access. It installs nothing from npm and runs none
+  # of the build tooling: it takes the installer built above and publishes it
+  # with the GitHub CLI (.github/scripts/publish-release.sh).
+  release:
+    name: Publish release
     needs: build
     if: ${{ always() && (inputs.update_notes || (needs.build.result == 'success' && needs.build.outputs.is_release == 'true')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Write release title and notes
+      - name: Download installer
+        if: ${{ !inputs.update_notes }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: LargeFileBuster-win-x64
+          path: bin
+
+      - name: Publish release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v$(node -p "require('./package.json').version")"
-          FILE="docs/release-notes/$TAG.md"
-          : > notes.md
-          if [[ -f "$FILE" ]]; then
-            cat "$FILE" >> notes.md
-            printf '\n\n---\n\n' >> notes.md
-          fi
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body >> notes.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "LargeFileBuster $TAG" --notes-file notes.md --draft=false --latest
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_NOTES: ${{ inputs.update_notes }}
+        run: bash .github/scripts/publish-release.sh

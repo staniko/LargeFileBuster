@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window'
 import { ChildResponse, ItemRecord, ListDirEntry, ListDirResponse, ScanStatus, DriveInfo } from '../../shared/types'
+import './app.css'
 
 /* ========== helpers ========== */
 
@@ -157,7 +158,6 @@ function sortItems(items: DisplayItem[], key: SortKey, dir: SortDir): DisplayIte
 const ROW_HEIGHT = 26
 const HEADER_BG = '#f5f5f5'
 const SELECTED_BG = '#cce5ff'
-const HOVER_BG = '#e9e9e9'
 const BORDER = '#e0e0e0'
 const FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
 const GRID_TEMPLATE = 'minmax(0, 1fr) 90px 50px 60px 130px 130px'
@@ -661,12 +661,6 @@ export default function App() {
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Backspace') { e.preventDefault(); goBack() } }}
     >
-      <style>{`
-        .list-row:not(.selected):hover {
-          background: ${HOVER_BG} !important;
-        }
-      `}</style>
-      
       {/* Main Panel */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
